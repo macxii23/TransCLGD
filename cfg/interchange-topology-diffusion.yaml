@@ -1,0 +1,236 @@
+out_dir: results
+metric_best: mae
+metric_agg: argmin
+tensorboard_each_run: False
+accelerator: "cuda:0"
+mlflow:
+  use: False
+  project: Interchange
+  name: Interchange-diffusion-segment-adj_only
+wandb:
+  use: False
+  project: Interchange
+dataset:
+  format: PyG-Interchange
+  name: interchange
+  task: graph
+  task_type: regression
+  transductive: False
+  node_encoder: True
+  node_encoder_name: InterchangeNode
+  node_encoder_num_types: 3                 #matches encoder-segment: segment feature [length L_norm + type one-hot] = 3 dims
+  node_encoder_bn: False
+  edge_encoder: True
+  edge_encoder_name: InterchangeEdge
+  edge_encoder_num_types: 2
+  edge_encoder_bn: False
+  add_virtual_node_edge: False
+  subgraph: False
+  graph_data_dir: graph_data_all  # full augmented training set (three-leg + four-leg); inference reads anchors/references from graph_data_4direction
+  max_nodes: 200                            # point-level node cap (same convention as the attribute stage; filters N before coarsening)
+  ctrl_scale: 10
+  lanes_norm: 10.0
+  speed_norm: 100.0
+  segment:
+    enable: True                            # segment coarse-graph mode
+    len_scale: 10.0                         # segment length L normalization scale (matches topology autoencoder)
+    max_nodes: 50                           # coarse-graph segment-count cap (M); applied after coarsening
+train:
+  mode: interchange_unconditional
+  amp: True
+  batch_size: 64                          #align with QM9 (old 16 was for large graphs N≈200; segment M≈12 leaves ample GPU memory)
+  eval_batch_size: 64                     #align with QM9 (larger bs speeds up generation; M≈12 uses little memory)
+  eval_max_samples: 64
+  eval_period: 10
+  start_eval_epoch: 20
+  enable_ckpt: True
+  ckpt_best: False
+  ckpt_clean: False
+  ckpt_period: 5
+  ensemble_repeat: 1
+  ensemble_mode: none
+  pretrain:
+    mask_node_prob: 0.0
+    mask_edge_prob: 0.0
+    mask_label_prob: 0.0
+    recon: all
+    original_task: False
+    input_target: False
+    node_factor: 10.0
+    edge_factor: 1.0
+    graph_factor: 0.0
+model:
+  type: LatentDiffusion
+  loss_fun: l1
+  edge_decoding: dot
+  graph_pooling: add
+posenc_RRWP:
+  enable: True
+  ksteps: 16
+  store_dense_edge: False
+encoder:
+  model_type: GraphTransformerEncoder       #matches encoder-segment: full encoder + node latent conditioning
+  in_dim: 48
+  prefix_dim: 96
+  posenc_in_dim: 16
+  posenc_in_dim_edge: 16                    #align with QM9 + encoder side (add edge PE)
+  posenc_dim: 48
+  pe_raw_norm: None
+  hid_dim: 96
+  out_dim: 32
+  decode_dim: 1
+  use_time: False
+  temb_dim: 0
+  num_heads: 4
+  num_layers: 5
+  dropout: 0.2
+  attn_dropout: 0.5
+  bn_momentum: 0.1
+  bn_no_runner: False
+  attn:
+    clamp: 5.
+    act: 'relu'
+    full_attn: True
+    edge_enhance: True
+    O_e: True
+    norm_e: True
+    signed_sqrt: True
+    score_act: True
+    deg_scaler: False
+    attn_product: mul
+    attn_reweight: False
+    edge_reweight: False
+    bn_momentum: 0.1
+    bn_no_runner: False
+  mpnn:
+    enable: True
+    act: 'relu'
+    dropout: 0.2
+    edge_enhance: True
+    project_edge: True
+  residual: True
+  layer_norm: False
+  batch_norm: True
+  act: 'relu'
+  norm_e: True
+  O_e: True
+  ff_e: True
+  update_e: True
+  force_undirected: True
+  pool: mean
+  pool_edge: True
+  pool_vn: False
+  post_pool: False
+  final_norm: True
+  prefix_type: add_all
+  label_embed_type: add_all
+  num_task: 1
+  task_type: regression
+  node_encoder: True
+  node_encoder_name: InterchangeNode
+  node_encoder_num_types: 3                 # matches the topology autoencoder: segment feature [length + type one-hot] = 3 dims (decode_node reconstructs 3)
+  node_encoder_bn: False
+  edge_encoder: True
+  edge_encoder_name: InterchangeEdge
+  edge_encoder_num_types: 2
+  edge_encoder_bn: False
+  add_virtual_node_edge: False
+dt:
+  in_dim: 32
+  hid_dim: 256
+  out_dim: 32
+  use_time: True
+  temb_dim: 128
+  cond_dim: 2                               #class_label dim (cost + throughput), matches geo/attr-cond
+  num_heads: 16
+  num_layers: 8
+  gradient_checkpointing: True
+  self_attn: True
+  dropout: 0.05
+  attn_dropout: 0.1
+  residual: True
+  layer_norm: False
+  batch_norm: True
+  act: 'relu'
+  attn:
+    clamp: 5.
+    act: 'relu'
+    full_attn: True
+    edge_enhance: True
+    O_e: True
+    norm_e: True
+    signed_sqrt: True
+    score_act: True
+    deg_scaler: False
+    attn_product: mul
+    attn_reweight: False
+    edge_reweight: False
+  norm_e: True
+  O_e: True
+  ff_e: True
+  ff_e_ca: True
+  ff_e_sa: True
+  update_e: True
+  force_undirected: True
+  pool: mean
+  pool_edge: True
+  pool_vn: False
+  post_pool: False
+  final_norm: True
+  condition_list: ['class_label']
+diffusion:
+  conditioning_key: crossattn
+  hid_dim: 32
+  parameterization: "x0"
+  cond_stage_key: class_label               #graph-level condition (cost, throughput) injected into topology denoising via cross-attention
+  first_stage_config: results/interchange-topology-autoencoder/0/ckpt/9.ckpt  # topology autoencoder pretrained ckpt
+  cond_stage_config: '__is_first_stage__'
+  adj_cond: False
+  adj_only: False                           
+  segment_mode: True                        #segment coarse-graph mode: decode then un-coarsen to full adjacency Â
+  node_type_num: 2
+  node_factor: 1.0                          #joint mode reconstructs segment length + type latent
+  edge_factor: 1.0
+  edge_pos_weight: 3.0                      #align with QM9 evenly-weighted MSE (code default 50.0 targets 5%-sparse large graphs; segment 24%-sparse needs no weighting)
+  adj_recon_factor: 0.0                     #align with QM9 (old 1.5 adjacency-CE aux loss fought the latent x0 target and kept DT from converging)
+  graph_factor: 0.0
+  recon_factor: 0.0
+  task_factor: 0.0
+  force_undirected: True
+gt:
+  layer_type: GritTransformer
+  layers: 10
+  n_heads: 8
+  dim_hidden: 64
+  dropout: 0.0
+  layer_norm: False
+  batch_norm: True
+  update_e: True
+  attn_dropout: 0.2
+  attn:
+    clamp: 5.
+    act: 'relu'
+    full_attn: True
+    edge_enhance: True
+    O_e: True
+    norm_e: True
+    fwl: False
+gnn:
+  head: san_graph
+  layers_pre_mp: 0
+  layers_post_mp: 3
+  dim_inner: 64
+  batchnorm: True
+  act: relu
+  dropout: 0.0
+  agg: mean
+  normalize_adj: False
+optim:
+  clip_grad_norm: True                      #drop batch_accumulation (bs=256 is enough; old =2 + bs=16 = effective bs=32)
+  optimizer: adamW
+  weight_decay: 1e-5
+  base_lr: 1e-4                             #align with QM9 diffusion
+  max_epoch: 3000
+  num_warmup_epochs: 50
+  scheduler: cosine_with_warmup
+  min_lr: 1e-6

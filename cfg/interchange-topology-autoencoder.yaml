@@ -1,0 +1,172 @@
+out_dir: results
+metric_best: mae
+metric_agg: argmin
+tensorboard_each_run: False
+accelerator: "cuda:0"
+mlflow:
+  use: False
+  project: Interchange
+  name: Interchange-encoder-segment
+wandb:
+  use: False
+  project: Interchange
+dataset:
+  format: PyG-Interchange
+  name: interchange
+  task: graph
+  task_type: regression
+  transductive: False
+  node_encoder: True
+  node_encoder_name: InterchangeNode
+  node_encoder_num_types: 3                 
+  node_encoder_bn: False
+  edge_encoder: True
+  edge_encoder_name: InterchangeEdge
+  edge_encoder_num_types: 2
+  edge_encoder_bn: False
+  add_virtual_node_edge: False
+  subgraph: False
+  graph_data_dir: graph_data_all  # full augmented training set (three-leg + four-leg); inference reads anchors/references from graph_data_4direction
+  max_nodes: 200                            # point-level node cap (same convention as the attribute stage; filters N before coarsening)
+  ctrl_scale: 10
+  lanes_norm: 10.0
+  speed_norm: 100.0
+  segment:                                  # segment coarse-graph switch
+    enable: True
+    len_scale: 10.0                         # segment length L normalization scale (L_norm = chain_len/len_scale; un-coarsening rounds it back)
+    max_nodes: 50                           # coarse-graph segment-count cap (M); applied after coarsening
+train:
+  mode: pretrain_encoder
+  batch_size: 64                          #align with QM9 (M≈12 < QM9_N≈18; small graphs have ample memory, larger bs improves convergence)
+  eval_period: 10                            #align with QM9
+  enable_ckpt: True
+  ckpt_best: False
+  ckpt_clean: False
+  ckpt_period: 10
+  ensemble_repeat: 1
+  ensemble_mode: none
+  pretrain:
+    mask_node_prob: 0.0
+    mask_edge_prob: 0.0
+    mask_label_prob: 0.0
+    recon: all
+    original_task: False
+    input_target: False
+    node_factor: 1.0                        #align with QM9 (old 10.0 over-favored nodes, crowding out edge latent capacity)
+    edge_factor: 1.0
+    graph_factor: 0.0
+    atom_bond_only: True
+    edge_pos_weight: 1.0                    #align with QM9 evenly-weighted CE (code default 5.0; explicit 1.0 avoids positive-class weighting squashing latent to binary and losing topology info)
+model:
+  type: GraphTransformerEncoder             #full encoder: reconstructs nodes + edges together; node latent serves as condition during diffusion (adj_only)
+  loss_fun: l1
+  edge_decoding: dot
+  graph_pooling: add
+posenc_RRWP:
+  enable: True
+  ksteps: 16
+  store_dense_edge: False
+encoder:
+  model_type: GraphTransformerEncoder
+  in_dim: 48
+  prefix_dim: 96
+  posenc_in_dim: 16
+  posenc_in_dim_edge: 16                    #align with QM9 (add edge PE; old 0 left encoder without edge position info)
+  posenc_dim: 48
+  pe_raw_norm: None
+  hid_dim: 96
+  out_dim: 32
+  decode_dim: 1
+  use_time: False
+  temb_dim: 0
+  num_heads: 4
+  num_layers: 5
+  dropout: 0.2
+  attn_dropout: 0.5
+  bn_momentum: 0.1
+  bn_no_runner: False
+  attn:
+    clamp: 5.
+    act: 'relu'
+    full_attn: True
+    edge_enhance: True
+    O_e: True
+    norm_e: True
+    signed_sqrt: True
+    score_act: True
+    deg_scaler: False
+    attn_product: mul
+    attn_reweight: False
+    edge_reweight: False
+    bn_momentum: 0.1
+    bn_no_runner: False
+  mpnn:
+    enable: True
+    act: 'relu'
+    dropout: 0.2
+    edge_enhance: True
+    project_edge: True
+  residual: True
+  layer_norm: False
+  batch_norm: True
+  act: 'relu'
+  norm_e: True
+  O_e: True
+  ff_e: True
+  update_e: True
+  force_undirected: True
+  pool: mean
+  pool_edge: True
+  pool_vn: False
+  post_pool: False
+  final_norm: True
+  prefix_type: add_all
+  label_embed_type: add_all
+  num_task: 1
+  task_type: regression
+  node_encoder: True
+  node_encoder_name: InterchangeNode
+  node_encoder_num_types: 3                  #same as dataset: segment feature [length + type one-hot] = 3 dims, decode_node reconstructs 3 dims
+  node_encoder_bn: False
+  edge_encoder: True
+  edge_encoder_name: InterchangeEdge
+  edge_encoder_num_types: 2
+  edge_encoder_bn: False
+  add_virtual_node_edge: False
+gt:
+  layer_type: GritTransformer
+  layers: 10
+  n_heads: 8
+  dim_hidden: 64
+  dropout: 0.0
+  layer_norm: False
+  batch_norm: True
+  update_e: True
+  attn_dropout: 0.2
+  attn:
+    clamp: 5.
+    act: 'relu'
+    full_attn: True
+    edge_enhance: True
+    O_e: True
+    norm_e: True
+    fwl: False
+gnn:
+  head: san_graph
+  layers_pre_mp: 0
+  layers_post_mp: 3
+  dim_inner: 64
+  batchnorm: True
+  act: relu
+  dropout: 0.0
+  agg: mean
+  normalize_adj: False
+optim:
+  clip_grad_norm: True
+  optimizer: adamW
+  weight_decay: 1e-5
+  base_lr: 1e-3                             #align with QM9 (old 1e-4 paired with bs=16; larger bs needs proportionally larger lr)
+  max_epoch: 500
+  num_warmup_epochs: 50                     #align with QM9 (old 5 was too short and unstable early on)
+  scheduler: cosine_with_warmup
+  min_lr: 1e-6

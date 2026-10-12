@@ -1,0 +1,173 @@
+out_dir: results #property prediction evaluation network: same backbone as encoder; graph-level regression predicting throughput (cost is computed from the closed-form formula, not the model)
+metric_best: mae
+metric_agg: argmin
+tensorboard_each_run: False
+accelerator: "cuda:0"
+wandb:
+  use: False
+  project: Interchange
+dataset:
+  format: PyG-Interchange
+  name: interchange
+  task: graph
+  task_type: regression
+  transductive: False
+  node_encoder: True
+  node_encoder_name: InterchangeUnified
+  node_encoder_num_types: 8
+  node_encoder_bn: False
+  edge_encoder: True
+  edge_encoder_name: InterchangeEdge
+  edge_encoder_num_types: 2
+  edge_encoder_bn: False
+  add_virtual_node_edge: False
+  subgraph: False
+  dir: ./datasets_pp_all #independent cache root (processed stored here under /Interchange), isolated from diffusion's shared ./datasets to avoid cross-contamination when switching datasets
+  graph_data_dir: graph_data_all # property predictor (for evaluation) trains on the full dataset; clear processed/ under `dir` after switching datasets
+  bins_source_dir: graph_data_4direction # cost/throughput percentile conditions are determined from the four-leg subset; empty falls back to graph_data_dir's own distribution
+  max_nodes: 200
+  ctrl_scale: 10
+  num_lanes_classes: 3
+  num_speed_classes: 3
+  adaptive_bins: True #True = equal-frequency binning of cost/throughput by the bins_source_dir (default: this dataset) distribution (written to graph_data_dir/_property_bins.json); False = use code's built-in default bins
+train:
+  mode: property_predictor
+  batch_size: 16
+  eval_period: 5
+  enable_ckpt: True
+  ckpt_best: True
+  ckpt_clean: False
+  ckpt_period: 10
+  ensemble_repeat: 1
+  ensemble_mode: none
+  pretrain:
+    predict_cost: False #throughput only: cost is computed from the closed-form formula (see eval), so the predictor no longer trains a cost head
+    mask_node_prob: 0.0
+    mask_edge_prob: 0.0
+    mask_label_prob: 0.0
+    recon: none
+    original_task: True
+    input_target: False
+    node_factor: 0.0
+    edge_factor: 0.0
+    graph_factor: 1.0
+    atom_bond_only: True
+    edge_pos_weight: 5.0
+model:
+  type: PropertyPredictor
+  loss_fun: cross_entropy
+  edge_decoding: dot
+  graph_pooling: add
+posenc_RRWP:
+  enable: True
+  ksteps: 16
+  store_dense_edge: False
+encoder:
+  model_type: PropertyPredictor
+  in_dim: 48
+  prefix_dim: 96
+  posenc_in_dim: 16
+  posenc_in_dim_edge: 0
+  posenc_dim: 48
+  pe_raw_norm: None
+  hid_dim: 96
+  out_dim: 32
+  decode_dim: 2
+  use_time: False
+  temb_dim: 0
+  num_heads: 4
+  num_layers: 5
+  regression: True #True = regression head directly predicts continuous cost/throughput (default; real-unit MAE/MAPE, unaffected by bin width); False = classification head (num_*_classes takes effect, legacy behavior)
+  num_cost_classes: 5 #only takes effect when regression=False (number of classes)
+  num_throughput_classes: 5 #only takes effect when regression=False
+  dropout: 0.2
+  attn_dropout: 0.5
+  bn_momentum: 0.1
+  bn_no_runner: False
+  num_lanes_classes: 3
+  num_speed_classes: 3
+  attn:
+    clamp: 5.
+    act: 'relu'
+    full_attn: True
+    edge_enhance: True
+    O_e: True
+    norm_e: True
+    signed_sqrt: True
+    score_act: True
+    deg_scaler: False
+    attn_product: mul
+    attn_reweight: False
+    edge_reweight: False
+    bn_momentum: 0.1
+    bn_no_runner: False
+  mpnn:
+    enable: True
+    act: 'relu'
+    dropout: 0.2
+    edge_enhance: True
+    project_edge: True
+  residual: True
+  layer_norm: False
+  batch_norm: True
+  act: 'relu'
+  norm_e: True
+  O_e: True
+  ff_e: True
+  update_e: True
+  force_undirected: True
+  pool: mean
+  pool_edge: True
+  pool_vn: False
+  post_pool: False
+  final_norm: True
+  prefix_type: add_all
+  label_embed_type: add_all
+  num_task: 1
+  task_type: regression
+  node_encoder: True
+  node_encoder_name: InterchangeUnified
+  node_encoder_num_types: 8
+  node_encoder_bn: False
+  edge_encoder: True
+  edge_encoder_name: InterchangeEdge
+  edge_encoder_num_types: 2
+  edge_encoder_bn: False
+  add_virtual_node_edge: False
+gt:
+  layer_type: GritTransformer
+  layers: 10
+  n_heads: 8
+  dim_hidden: 64
+  dropout: 0.0
+  layer_norm: False
+  batch_norm: True
+  update_e: True
+  attn_dropout: 0.2
+  attn:
+    clamp: 5.
+    act: 'relu'
+    full_attn: True
+    edge_enhance: True
+    O_e: True
+    norm_e: True
+    fwl: False
+gnn:
+  head: san_graph
+  layers_pre_mp: 0
+  layers_post_mp: 3
+  dim_inner: 64
+  batchnorm: True
+  act: relu
+  dropout: 0.0
+  agg: mean
+  normalize_adj: False
+optim:
+  clip_grad_norm: True
+  optimizer: adamW
+  weight_decay: 1e-5
+  base_lr: 1e-4
+  max_epoch: 500
+  num_warmup_epochs: 5
+  scheduler: cosine_with_warmup
+  min_lr: 1e-6

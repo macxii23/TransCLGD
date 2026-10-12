@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# Training outputs and checkpoints (retrain locally, not versioned)
+results/
+*.ckpt
+wandb/
+lightning_logs/
+runs/
+
+# Dataset preprocessing caches (generated on first load)
+datasets/*/processed/
+datasets_pp*/
+**/_property_bins.json
+**/_cond_index.npz
+**/graphs.jsonl
+**/graphs.jsonl.idx
+# graph_data_*/graphs.jsonl.gz are demo data (versioned); the full data is dataset.zip
+
+# IDE / OS / agent scratch
+.idea/
+.vscode/
+.cursor/
+.DS_Store

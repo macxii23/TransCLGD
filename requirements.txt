@@ -1,0 +1,20 @@
+# Install PyTorch 2.1.0 (CUDA 11.8) and the PyG extension wheels first, see README section 1.
+torch_geometric==2.4.0
+yacs
+pytorch-lightning
+ogb
+tensorboardX
+einops
+networkx
+scipy
+numpy
+opt_einsum
+performer-pytorch
+local-attention
+axial-positional-embedding
+hyper-connections
+torch-einops-utils
+wandb
+torchmetrics
+fsspec
+tqdm
