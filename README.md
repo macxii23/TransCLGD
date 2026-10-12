@@ -1,6 +1,6 @@
-# InterCLGD: Interchange Design based on Cascaded Latent Graph Diffusion
+# TransCLGD: Intelligent Generative Transportation Design with Cascaded Latent Graph Diffusion
 
-Companion code for the paper. **InterCLGD** (Interchange Cascaded Latent Graph Diffusion) represents interchanges as point-level attributed graphs and generates them through a **cascaded latent graph diffusion** framework with two sequential stages.
+Companion code for the paper. TransCLGD (Intelligent Generative Transportation Design with Cascaded Latent Graph Diffusion) represents interchanges as point-level attributed graphs and generates them through a **cascaded latent graph diffusion** framework with two sequential stages.
 
 - **Topology stage**: the point-level adjacency is equivalently transformed into a segment-level coarse graph `C = (W, L)` (coarsening). A topology autoencoder builds its latent space, a property-conditioned topology denoising network generates a new coarse graph, and reverse uncoarsening recovers the point-level adjacency `A_hat`.
 - **Attribute stage**: an attribute autoencoder and a property-conditioned attribute denoising network generate the point-level node attributes (node coordinates, lane configuration, design speed) jointly under the generated topology.
@@ -8,6 +8,8 @@ Companion code for the paper. **InterCLGD** (Interchange Cascaded Latent Graph D
 - **Inference-time guidance**: the same trained model supports three tasks without task-specific retraining — de novo generation (from Gaussian noise), mainline-constrained completion (masked latent replacement), and reference-guided upgrading (partially perturbed reference latent).
 
 ---
+
+
 
 ## 1. Environment
 
@@ -34,7 +36,7 @@ python -c "import torch_geometric; print('PyG:', torch_geometric.__version__)"
 ```
 
 > If a later `pip install` overwrites CUDA torch with a CPU build, re-run `pip install torch==2.1.0 --index-url https://download.pytorch.org/whl/cu118`. The environment name may be changed freely. `requirements.txt` lists the same set for a one-shot `pip install -r requirements.txt` (PyTorch/PyG wheels still need the index URLs above).
->
+
 
 
 ## 2. Data
@@ -66,6 +68,8 @@ for line in gzip.open('graph_data_4direction/graphs.jsonl.gz', 'rt', encoding='u
     g = json.loads(line)                                         # one interchange
 ```
 
+
+
 ### 2.2 Record format
 
 Each interchange is a point-level attributed graph: the road centerlines are discretized into ordered points (nodes), and consecutive points along the same road are connected by edges.
@@ -88,32 +92,39 @@ Each interchange is a point-level attributed graph: the road centerlines are dis
 
 **Graph-level fields**
 
-| Field | Description |
-| --- | --- |
-| `id` | Unique interchange identifier within the file. |
-| `cost` | Design property 1: construction cost of the interchange, in m. |
-| `throughput` | Design property 2: traffic throughput of the interchange, in veh/h. |
+
+| Field              | Description                                                                                                                                  |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`               | Unique interchange identifier within the file.                                                                                               |
+| `cost`             | Design property 1: construction cost of the interchange, in m.                                                                               |
+| `throughput`       | Design property 2: traffic throughput of the interchange, in veh/h.                                                                          |
 | `norm_params.diag` | Coordinate normalization scale (the same global value for every graph in both files; also `global_diag` in `cfg/interchange-generate.yaml`). |
-| `nodes` | Point-level nodes (see below). |
-| `edges` | Point-level edges (see below). |
+| `nodes`            | Point-level nodes (see below).                                                                                                               |
+| `edges`            | Point-level edges (see below).                                                                                                               |
+
 
 The pair `(cost, throughput)` is the target property vector used for conditioning.
 
 **Node fields** (`nodes[i]`)
 
-| Field | Description |
-| --- | --- |
-| `id` | Node index, referenced by `edges`. |
-| `x`, `y` | Normalized planar coordinates. |
-| `node_type` | `mainline` or `ramp`. |
-| `num_lanes` | Number of lanes at this point. |
-| `speed` | Design speed in m/s. |
+
+| Field       | Description                        |
+| ----------- | ---------------------------------- |
+| `id`        | Node index, referenced by `edges`. |
+| `x`, `y`    | Normalized planar coordinates.     |
+| `node_type` | `mainline` or `ramp`.              |
+| `num_lanes` | Number of lanes at this point.     |
+| `speed`     | Design speed in m/s.               |
+
 
 **Edge fields** (`edges[j]`)
 
-| Field | Description |
-| --- | --- |
+
+| Field              | Description                                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------------------- |
 | `source`, `target` | Node `id`s of the two endpoints. Edges are treated as undirected (the loader symmetrizes the adjacency). |
+
+
 
 
 ### 2.3 How the code uses the data
@@ -122,18 +133,20 @@ Besides the packed file, the loader also accepts a folder layout `{id}/graph.jso
 
 Graphs with more than `max_nodes: 200` nodes are skipped at preprocessing. The remaining graphs are split randomly into train / val / test = 80% / 10% / 10% with a fixed seed (`42`).
 
-| Directory | Usage |
-| --- | --- |
-| `graph_data_all/` | Full augmented dataset (three-leg + four-leg interchanges). Used for **all training**: topology/attribute autoencoders, topology/attribute diffusion models, and the property predictor. Provides the normalization statistics `y_mean/y_std`. |
-| `graph_data_4direction/` | Four-leg subset. Used at **inference** to provide task A target properties, task B mainline anchors, and task C existing interchanges to upgrade; it is also the basis for the cost/throughput percentile conditions. |
+
+| Directory                | Usage                                                                                                                                                                                                                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `graph_data_all/`        | Full augmented dataset (three-leg + four-leg interchanges). Used for **all training**: topology/attribute autoencoders, topology/attribute diffusion models, and the property predictor. Provides the normalization statistics `y_mean/y_std`. |
+| `graph_data_4direction/` | Four-leg subset. Used at **inference** to provide task A target properties, task B mainline anchors, and task C existing interchanges to upgrade; it is also the basis for the cost/throughput percentile conditions.                          |
 
 
->
 > Normalization is shared through `_property_bins.json`: `y_mean/y_std` come from the training set (`graph_data_all`) while the cost/throughput bins come from the four-leg subset. The file is generated automatically on the first training preprocess and is **not** version-controlled, so delete any stale copy when the data changes.
 >
-> Datasets are auto-preprocessed and cached on first load. Training caches under its own dataset root; inference builds a separate cache (`dataset_root` in the inference config) from `graph_data_4direction`. **Clear the corresponding `processed/` cache and re-preprocess when switching datasets or between the two stages**, since the topology configs set `dataset.segment.enable: True` and their cache carries the extra `seg_*` coarse-graph fields that the attribute configs do not build. (The point-level cap is `max_nodes: 200` in both stages; the topology configs additionally cap the coarse graph at `dataset.segment.max_nodes: 50` segments, applied after coarsening.)
+> Datasets are auto-preprocessed and cached on first load. Training caches under its own dataset root; inference builds a separate cache (`dataset_root` in the inference config) from `graph_data_4direction`. **Clear the corresponding** `processed/` **cache and re-preprocess when switching datasets or between the two stages**, since the topology configs set `dataset.segment.enable: True` and their cache carries the extra `seg_`* coarse-graph fields that the attribute configs do not build. (The point-level cap is `max_nodes: 200` in both stages; the topology configs additionally cap the coarse graph at `dataset.segment.max_nodes: 50` segments, applied after coarsening.)
 >
 > Inference additionally writes `_cond_index.npz` next to the inference dataset (`meta_cache` in the inference config): a scan cache of `(id, cost, throughput, N)` that avoids re-reading every graph on later runs. It is regenerated automatically and not version-controlled.
+
+
 
 ## 3. Training
 
@@ -147,6 +160,8 @@ python pretrain.py --cfg cfg/interchange-topology-autoencoder.yaml
 # 2) train the property-conditioned topology diffusion; decoded coarse graph is uncoarsened into the adjacency A_hat
 python train_interchange_diffusion.py --cfg cfg/interchange-topology-diffusion.yaml
 ```
+
+
 
 ### Attribute stage
 
@@ -169,6 +184,8 @@ Graph-transformer predictor trained on `graph_data_all`, used later for property
 python pretrain.py --cfg cfg/interchange-property-predictor.yaml
 ```
 
+
+
 ## 4. Inference (three tasks)
 
 All tasks share `cfg/interchange-generate.yaml` (topology/attribute config + ckpt paths, target grid, inference data source, etc.).
@@ -183,6 +200,7 @@ python generate_interchange_cond.py --cfg cfg/interchange-generate.yaml \
 ```
 
 
+
 ### Task B - Mainline-constrained interchange completion
 
 The prescribed mainline is preserved through masked latent replacement (applied to both stages), while the ramp system is generated:
@@ -191,6 +209,8 @@ The prescribed mainline is preserved through masked latent replacement (applied 
 python generate_interchange_complete.py --cfg cfg/interchange-generate.yaml \
     --anchor-template <gid> --targets "25000,12000" --k 20
 ```
+
+
 
 ### Task C - Reference-guided existing interchange upgrading
 
@@ -238,7 +258,7 @@ Without `--ckpt` this picks the highest-numbered epoch on disk, not the best-val
 
 ```
 cfg/                                     Core configs (topology/attribute autoencoder + diffusion, predictor, inference)
-lgd/                                     InterCLGD library (diffusion, graph transformer, interchange dataset, segment coarsening, etc.)
+lgd/                                     TransCLGD library (diffusion, graph transformer, interchange dataset, segment coarsening, etc.)
 pretrain.py                              autoencoder / property-predictor pretraining entry
 train_interchange_diffusion.py           latent diffusion training entry (DDP-capable)
 generate_interchange_cond.py             task A inference
@@ -252,5 +272,4 @@ requirements.txt                         dependency list (see "Environment")
 dataset.zip                              complete dataset; extract at the repo root (see "Data")
 graph_data_all/  graph_data_4direction/  demo data (24 graphs each); replace with dataset.zip for the full data
 ```
-
 
